@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dự đoán Xếp loại Học sinh (KNN)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        input, select, button { margin: 5px; padding: 8px; }
+        button { padding: 10px 15px; cursor: pointer; }
+        .result { font-size: 20px; font-weight: bold; margin-top: 20px; }
+        canvas { margin-top: 20px; max-width: 90vw; }
+    </style>
+</head>
+<body>
+
+    <h2>Dự đoán Xếp loại Học sinh bằng KNN</h2>
+
+    <label>Điểm Toán:</label>
+    <input type="number" id="math" placeholder="Nhập điểm Toán">
+
+    <label>Điểm Văn:</label>
+    <input type="number" id="literature" placeholder="Nhập điểm Văn">
+
+    <label>Chọn K:</label>
+    <select id="k">
+        <option value="1">1</option>
+        <option value="3">3</option>
+        <option value="5">5</option>
+    </select>
+
+    <button onclick="predict()">Dự đoán</button>
+
+    <p class="result" id="result"></p>
+
+    <h3>Các điểm gần nhất và khoảng cách:</h3>
+    <ul id="neighbors"></ul>
+
+    <canvas id="chart"></canvas>
+
+    <script>
+        // Dữ liệu mẫu: Điểm Toán, Điểm Văn, Nhóm Xếp loại
+        const students = [
+            { math: 10, lit: 9, label: "Giỏi" },
+            { math: 9, lit: 8, label: "Giỏi" },
+            { math: 8, lit: 7, label: "Khá Giỏi" },
+            { math: 7, lit: 6, label: "Khá" },
+            { math: 6, lit: 5, label: "Khá" },
+            { math: 5, lit: 4, label: "Trung bình" },
+            { math: 4, lit: 3, label: "Trung bình" },
+            { math: 3, lit: 2, label: "Yếu" },
+            { math: 2, lit: 1, label: "Yếu" }
+        ];
+
+        function euclideanDistance(a, b) {
+            return Math.sqrt((a.math - b.math) ** 2 + (a.lit - b.lit) ** 2).toFixed(2);
+        }
+
+        function predict() {
+            const math = parseFloat(document.getElementById("math").value);
+            const literature = parseFloat(document.getElementById("literature").value);
+            const k = parseInt(document.getElementById("k").value);
+
+            if (isNaN(math) || isNaN(literature)) {
+                document.getElementById("result").innerText = "Vui lòng nhập đầy đủ điểm!";
+                return;
+            }
+
+            // Tính khoảng cách đến từng học sinh trong dataset
+            let distances = students.map(s => ({
+                label: s.label,
+                distance: euclideanDistance({ math, lit: literature }, s),
+                math: s.math,
+                lit: s.lit
+            }));
+
+            // Sắp xếp theo khoảng cách gần nhất
+            distances.sort((a, b) => a.distance - b.distance);
+
+            // Lấy K học sinh gần nhất
+            let nearestNeighbors = distances.slice(0, k);
+
+            // Đếm số lần xuất hiện của từng nhóm
+            let labelCounts = {};
+            nearestNeighbors.forEach(n => {
+                labelCounts[n.label] = (labelCounts[n.label] || 0) + 1;
+            });
+
+            // Tìm nhóm có số lần xuất hiện nhiều nhất
+            let predictedLabel = Object.keys(labelCounts).reduce((a, b) => labelCounts[a] > labelCounts[b] ? a : b);
+
+            document.getElementById("result").innerText = `Dự đoán: ${predictedLabel}`;
+
+            // Hiển thị danh sách các điểm gần nhất và khoảng cách
+            let neighborsList = document.getElementById("neighbors");
+            neighborsList.innerHTML = "";
+            nearestNeighbors.forEach(n => {
+                let li = document.createElement("li");
+                li.innerText = `Toán: ${n.math}, Văn: ${n.lit} → ${n.label} (Khoảng cách: ${n.distance})`;
+                neighborsList.appendChild(li);
+            });
+
+            // Cập nhật biểu đồ với đường kết nối
+            updateChart(math, literature, nearestNeighbors);
+        }
+
+        function updateChart(math, literature, nearestNeighbors) {
+            let ctx = document.getElementById("chart").getContext("2d");
+
+            // Dữ liệu điểm gốc
+            let dataPoints = students.map(s => ({
+                x: s.math,
+                y: s.lit,
+                r: 5,
+                backgroundColor: s.label === "Giỏi" ? "green" : s.label === "Khá" ? "orange" : "red"
+            }));
+
+            // Điểm mới nhập
+            dataPoints.push({ x: math, y: literature, r: 8, backgroundColor: "blue" });
+
+            // Các điểm gần nhất
+            let lines = [];
+            nearestNeighbors.forEach(n => {
+                dataPoints.push({ x: n.math, y: n.lit, r: 6, backgroundColor: "yellow" });
+                lines.push([{ x: math, y: literature }, { x: n.math, y: n.lit }]); // Lưu đường kết nối
+            });
+
+            // Xóa biểu đồ cũ nếu có
+            if (window.knnChart) {
+                window.knnChart.destroy();
+            }
+
+            window.knnChart = new Chart(ctx, {
+                type: "scatter",
+                data: {
+                    datasets: [{
+                        label: "Dữ liệu học sinh",
+                        data: dataPoints,
+                        backgroundColor: dataPoints.map(d => d.backgroundColor),
+                        pointRadius: dataPoints.map(d => d.r)
+                    }, 
+                    {
+                        label: "Đường kết nối",
+                        data: lines.flat(), // Dữ liệu đường kết nối
+                        showLine: true,
+                        borderColor: "gray",
+                        borderWidth: 1,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: { title: { display: true, text: "Điểm Toán" }, min: 0, max: 10 },
+                        y: { title: { display: true, text: "Điểm Văn" }, min: 0, max: 10 }
+                    }
+                }
+            });
+        }
+    </script>
+
+</body>
+</html>
